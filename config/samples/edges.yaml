@@ -1,0 +1,26 @@
+apiVersion: aiedge.ndsl-lab.cn/v1
+kind: Edge
+metadata:
+  name: edge1
+spec:
+  edgeName: "edge1"
+  baseArch: "amd64"
+  nodePortIp: "192.168.20.221"
+  imageRegistry: "registry.aiedge.ndsl-lab.cn"
+  nodes:
+    - zqd-edge222
+    - zqd-edge223
+
+---
+
+apiVersion: aiedge.ndsl-lab.cn/v1
+kind: Edge
+metadata:
+  name: edge2
+spec:
+  edgeName: "edge2"
+  baseArch: "amd64"
+  nodePortIp: "192.168.20.221"
+  imageRegistry: "registry.aiedge.ndsl-lab.cn"
+  nodes:
+    - zqd-edge224

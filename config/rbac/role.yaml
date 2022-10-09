@@ -1,0 +1,33 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - aiedge.ndsl-lab.cn
+  resources:
+  - edges
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiedge.ndsl-lab.cn
+  resources:
+  - edges/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - aiedge.ndsl-lab.cn
+  resources:
+  - edges/status
+  verbs:
+  - get
+  - patch
+  - update

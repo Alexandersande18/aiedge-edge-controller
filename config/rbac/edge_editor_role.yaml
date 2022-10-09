@@ -1,0 +1,31 @@
+# permissions for end users to edit edges.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: edge-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: aiedge-edge-controller
+    app.kubernetes.io/part-of: aiedge-edge-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: edge-editor-role
+rules:
+- apiGroups:
+  - aiedge.ndsl-lab.cn
+  resources:
+  - edges
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiedge.ndsl-lab.cn
+  resources:
+  - edges/status
+  verbs:
+  - get

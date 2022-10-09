@@ -1,0 +1,15 @@
+domain: aiedge.ndsl-lab.cn
+layout:
+- go.kubebuilder.io/v3
+projectName: aiedge-edge-controller
+repo: aiedge-edge-controller
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: aiedge.ndsl-lab.cn
+  kind: Edge
+  path: aiedge-edge-controller/api/v1
+  version: v1
+version: "3"
