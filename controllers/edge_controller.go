@@ -17,24 +17,25 @@ limitations under the License.
 package controllers
 
 import (
+	aiedgendsllabcnv1 "aiedge-edge-controller/api/v1"
 	"context"
 	glog "log"
-	aiedgendsllabcnv1 "aiedge-edge-controller/api/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	ktypes "k8s.io/apimachinery/pkg/types"
+
 	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
 	AiedgeEdgeTagName = "aiedge/edge"
-	KEEdgeTagName         = "node-role.kubernetes.io/edge"
+	KEEdgeTagName     = "node-role.kubernetes.io/edge"
 )
 
 // EdgeReconciler reconciles a Edge object
@@ -66,30 +67,30 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	//DELETION
 	myFinalizerName := "aiedge.ndsl-lab.cn/finalizer"
-    // examine DeletionTimestamp to determine if object is under deletion
-    if edge.ObjectMeta.DeletionTimestamp.IsZero() {
+	// examine DeletionTimestamp to determine if object is under deletion
+	if edge.ObjectMeta.DeletionTimestamp.IsZero() {
 		glog.Println("Not being deleted")
-        if !controllerutil.ContainsFinalizer(&edge, myFinalizerName) {
+		if !controllerutil.ContainsFinalizer(&edge, myFinalizerName) {
 			glog.Println("Adding finalizer")
-            controllerutil.AddFinalizer(&edge, myFinalizerName)
-            if err := r.Update(ctx, &edge); err != nil {
-                return ctrl.Result{}, err
-            }
-        }
-    } else {
-        // The object is being deleted
+			controllerutil.AddFinalizer(&edge, myFinalizerName)
+			if err := r.Update(ctx, &edge); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		// The object is being deleted
 		glog.Println("Being deleted")
-        if controllerutil.ContainsFinalizer(&edge, myFinalizerName) {
-            if err := r.deleteExternalResources(&edge); err != nil {
-                return ctrl.Result{}, err
-            }
-            controllerutil.RemoveFinalizer(&edge, myFinalizerName)
-            if err := r.Update(ctx, &edge); err != nil {
-                return ctrl.Result{}, err
-            }
-        }
-        return ctrl.Result{}, nil
-    }
+		if controllerutil.ContainsFinalizer(&edge, myFinalizerName) {
+			if err := r.deleteExternalResources(ctx, &edge); err != nil {
+				return ctrl.Result{}, err
+			}
+			controllerutil.RemoveFinalizer(&edge, myFinalizerName)
+			if err := r.Update(ctx, &edge); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
 
 	// ADD & UPDATE
 	r.updateStatus(ctx, &edge)
@@ -98,10 +99,10 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	for _, nodeT := range edge.Spec.Nodes {
 		var kNode corev1.Node
 		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT}, &kNode); err != nil {
-			log.Error(err, "Failed to GET Node" + nodeT)
+			log.Error(err, "Failed to GET Node"+nodeT)
 			return ctrl.Result{}, client.IgnoreAlreadyExists(err)
-		} 
-		glog.Println(edgeName +  "/" + kNode.Name)
+		}
+		glog.Println(edgeName + "/" + kNode.Name)
 		lb := kNode.GetLabels()
 		if _, ok := lb[KEEdgeTagName]; !ok {
 			continue
@@ -109,12 +110,12 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if label, ok := lb[AiedgeEdgeTagName]; ok && label == edgeName {
 			continue
 		}
-		kNode.Labels[AiedgeEdgeTagName] = edgeName	
+		kNode.Labels[AiedgeEdgeTagName] = edgeName
 		if err := r.Patch(ctx, &kNode, client.Merge); err != nil {
-			log.Error(err, "Failed to TAG Node" + nodeT)
+			log.Error(err, "Failed to TAG Node"+nodeT)
 		}
 	}
-	
+
 	var nodeList corev1.NodeList
 	// labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"version":""}}
 	labelSelector, _ := labels.Parse("node-role.kubernetes.io/edge")
@@ -126,37 +127,47 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{}, nil
 }
 
-
-func (r *EdgeReconciler) updateStatus(ctx context.Context, edge *aiedgendsllabcnv1.Edge ) error {
+func (r *EdgeReconciler) updateStatus(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
 	log := log.FromContext(ctx)
 	edge.Status.EdgeSize = int32(len(edge.Spec.Nodes))
-    if err := r.Status().Update(context.Background(), edge); err != nil {
+	if err := r.Status().Update(context.Background(), edge); err != nil {
 		log.Error(err, "Failed to UPDATE status")
 		return err
 	}
 	return nil
 }
 
-func (r *EdgeReconciler) deleteExternalResources(edge *aiedgendsllabcnv1.Edge) error {
-    //
-    // delete any external resources associated with the cronJob
-    //
-    // Ensure that delete implementation is idempotent and safe to invoke
-    // multiple times for same object.
+func (r *EdgeReconciler) deleteExternalResources(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
+	//
+	// delete any external resources associated with the cronJob
+	//
+	// Ensure that delete implementation is idempotent and safe to invoke
+	// multiple times for same object.
+	clientObjList, err := deserializeAndRenderFromFile("yamls/test.yaml", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry))
+	if err != nil {
+		glog.Println(err, "deserializeFromFile Error")
+		return err
+	}
+	for _, clientObj := range clientObjList {
+		glog.Println("Deleting", clientObj.GetName())
+		r.Delete(ctx, clientObj)
+	}
 	return nil
 }
 
 func (r *EdgeReconciler) applyTest(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
-	// log := log.FromContext(ctx)
-	// clientObj, err := deserializeFromFile("/home/zqd/k8s-test/aiedge-edge-controller/yamls/test.yaml")
-	// if err != nil {
-	// 	log.Error(err, "deserializeFromFile Error")
-	// 	return err
-	// }
-	// r.Create(ctx, clientObj)
+	log := log.FromContext(ctx)
+	clientObjList, err := deserializeAndRenderFromFile("yamls/test.yaml", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry))
+	if err != nil {
+		log.Error(err, "deserializeFromFile Error")
+		return err
+	}
+	for _, clientObj := range clientObjList {
+		glog.Println("Applying", clientObj.GetName())
+		r.Create(ctx, clientObj)
+	}
 	return nil
 }
-
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *EdgeReconciler) SetupWithManager(mgr ctrl.Manager) error {

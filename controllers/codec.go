@@ -7,7 +7,7 @@ import (
 	// "sigs.k8s.io/controller-runtime/pkg/client"
 	// "k8s.io/apimachinery/pkg/runtime"
 	"io/ioutil"
-	glog "log"
+	// glog "log"
 
 	// "context"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -27,23 +27,23 @@ func deserialize(data []byte) (client.Object, error) {
 	return clientObj, nil
 }
 
-func deserializeFromFile(fileName string, nodePortIp string, edgeName string, imageRegistry string) ([]client.Object, error) {
+func deserializeAndRenderFromFile(fileName string, nodePortIp string, edgeName string, imageRegistry string) ([]client.Object, error) {
 	data, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return nil, err
 	}
-    var ret []client.Object
-    for _, doc := range strings.Split(string(data), "---") {
-        var afterRender string
-        afterRender = strings.ReplaceAll(doc, "{{AIEDGE_SUBNET_NAME}}", edgeName)
-        afterRender = strings.ReplaceAll(afterRender, "{{AIEDGE_NODEPORT_IP}}", nodePortIp)
-        afterRender = strings.ReplaceAll(afterRender, "{{AIEDGE_IMAGE_REGISTRY}}", imageRegistry)
-        glog.Println(afterRender)
-        c, err := deserialize([]byte(afterRender))
-        if err != nil {
-            return ret, err
-        }
-        ret = append(ret, c)
-    }
+	var ret []client.Object
+	for _, doc := range strings.Split(string(data), "---") {
+		var afterRender string
+		afterRender = strings.ReplaceAll(doc, "{{AIEDGE_SUBNET_NAME}}", edgeName)
+		afterRender = strings.ReplaceAll(afterRender, "{{AIEDGE_NODEPORT_IP}}", nodePortIp)
+		afterRender = strings.ReplaceAll(afterRender, "{{AIEDGE_IMAGE_REGISTRY}}", imageRegistry)
+		// glog.Println(afterRender)
+		c, err := deserialize([]byte(afterRender))
+		if err != nil {
+			return ret, err
+		}
+		ret = append(ret, c)
+	}
 	return ret, nil
 }

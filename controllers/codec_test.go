@@ -9,6 +9,6 @@ import (
 )
 
 func TestDecode(t *testing.T) {
-	c, _ := deserializeFromFile("../yamls/test.yaml", "192.168.20.221", "edge1", "registry.aiedge.ndsl-lab.cn")
+	c, _ := deserializeAndRenderFromFile("../yamls/test.yaml", "192.168.20.221", "edge1", "registry.aiedge.ndsl-lab.cn")
 	glog.Println(c)
 }
