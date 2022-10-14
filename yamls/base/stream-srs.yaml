@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: stream-srs-service
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: stream-srs
+spec:
+  selector:
+    app: stream-srs
+  ports:
+    - name: stream-srs-port
+      protocol: TCP
+      port: 1935
+      nodePort: 30200
+      targetPort: 1935
+    - name: stream-srs-http-port
+      protocol: TCP
+      port: 8080
+      nodePort: 30201
+      targetPort: 8080
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stream-srs-deployment
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: stream-srs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stream-srs
+      name: stream-srs
+  template:
+    metadata:
+      labels:
+        app: stream-srs
+        name: stream-srs
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: stream-srs
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/ossrs/srs:4-aiedge"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 1935

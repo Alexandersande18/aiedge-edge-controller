@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stream-relay-transfer-cm-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    aiedge/edge: "{{AIEDGE_SUBNET_NAME}}"
+data:
+  config.json: |
+    {
+      "auth": "http://{{AIEDGE_NODEPORT_IP}}:30100",
+      "userName": "aiedge-stream",
+      "password": "123456",
+      "edgeName": "{{AIEDGE_SUBNET_NAME}}",
+      "ceceServiceName" : "cece-service-{{AIEDGE_SUBNET_NAME}}",
+      "nsPort": "18053",
+      "cecePort": "80",
+      "mapperPort": "80",
+      "schedulerIP": "127.0.0.1",
+      "schedulerPort": "8085",
+      "hubPath": "/hub"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stream-relay-scheduler-cm-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  config.json: |
+    {
+      "server": {
+        "port": 8085,
+        "pubKeyPath": "conf/jwtRS256.key.pub"
+      },
+      "auth": {
+        "server": "http://{{AIEDGE_NODEPORT_IP}}:30100",
+        "username": "aiedge-stream",
+        "password": "123456"
+      },
+      "srs": {
+        "rtmpServer": "rtmp://edge-stream-relay-service-{{AIEDGE_SUBNET_NAME}}.aiedge/live",
+        "httpServer": "http://edge-stream-relay-service-{{AIEDGE_SUBNET_NAME}}.aiedge:8080/live"
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-stream-relay-service-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: edge-stream-relay-{{AIEDGE_SUBNET_NAME}}
+spec:
+  selector:
+    app: edge-stream-relay-{{AIEDGE_SUBNET_NAME}}
+  ports:
+    - name: scheduler
+      protocol: TCP
+      port: 80 #集群内的其他容器组可通过 port 端口访问 Service
+      # nodePort: 31085 #通过任意节点的 nodePort 端口访问 Service
+      targetPort: 8085 #将请求转发到匹配 Pod 的 targetPort 端口
+    - name: srs-rtmp
+      protocol: TCP
+      port: 1935 #集群内的其他容器组可通过 port 端口访问 Service
+      # nodePort: 31035 #通过任意节点的 nodePort 端口访问 Service
+      targetPort: 1935 #将请求转发到匹配 Pod 的 targetPort 端口
+    - name: srs-http
+      protocol: TCP
+      port: 8080 #集群内的其他容器组可通过 port 端口访问 Service
+      # nodePort: 31080 #通过任意节点的 nodePort 端口访问 Service
+      targetPort: 8080 #将请求转发到匹配 Pod 的 targetPort 端口
+  #type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-stream-relay-deployment-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    aiedge/edge: "{{AIEDGE_SUBNET_NAME}}"
+    app: edge-stream-relay-{{AIEDGE_SUBNET_NAME}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: edge-stream-relay-{{AIEDGE_SUBNET_NAME}}
+  template:
+    metadata:
+      labels:
+        app: edge-stream-relay-{{AIEDGE_SUBNET_NAME}}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: aiedge/edge
+                    operator: In
+                    values:
+                      - "{{AIEDGE_SUBNET_NAME}}"
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - "arm64"
+      imagePullSecrets:
+        - name: registry-pull-secret
+      initContainers:
+        - name: wait-aiedge-auth
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox-curl"
+          command:
+            [
+              "sh",
+              "-c",
+              "until curl http://{{AIEDGE_NODEPORT_IP}}:30100 -m 2; do echo waiting for auth; sleep 2; done;",
+            ]
+      containers:
+        - name: stream-transfer-{{AIEDGE_SUBNET_NAME}}
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/stream-transfer-arm64:v2.0"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: stream-transfer-volume-{{AIEDGE_SUBNET_NAME}}
+              mountPath: /app/conf/config.json
+              subPath: config.json
+          env:
+            - name: hostIP # 传入hostip地址
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+        - name: aiedge-stream-scheduler
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-stream-scheduler-arm64:v2.0"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: aiedge-stream-scheduler-volume
+              mountPath: /app/conf/config.json
+              subPath: config.json
+            - name: jwt-pubkey-volume
+              mountPath: /app/conf/jwtRS256.key.pub
+              subPath: jwtRS256.key.pub
+        - name: stream-srs
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/srs-arm64:4"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 1935
+      volumes:
+        - name: stream-transfer-volume-{{AIEDGE_SUBNET_NAME}}
+          configMap:
+            name: stream-relay-transfer-cm-{{AIEDGE_SUBNET_NAME}}
+        - name: aiedge-stream-scheduler-volume
+          configMap:
+            name: stream-relay-scheduler-cm-{{AIEDGE_SUBNET_NAME}}
+        - name: jwt-pubkey-volume
+          configMap:
+            name: jwt-pubkey-configmap

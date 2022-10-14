@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: acc-front-svc
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: acc-front
+spec:
+  selector:
+    app: acc-front
+  ports:
+    - protocol: TCP
+      port: 80
+      nodePort: 30089
+      targetPort: 80
+  type: NodePort
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acc-front-deploy
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: acc-front
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acc-front
+  template:
+    metadata:
+      labels:
+        app: acc-front
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      volumes:
+        - name: acc-nginx-cm-volume
+          configMap:
+            name: acc-nginx-cm
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: acc-front
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/acc-frontend:latest"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: acc-nginx-cm-volume
+              mountPath: /etc/nginx/nginx.conf
+              subPath: acc-nginx.conf
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acc-nginx-cm
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  acc-nginx.conf: |
+    events {
+      worker_connections 768;
+    }
+    http {
+      sendfile on;
+      tcp_nopush on;
+      tcp_nodelay on;
+      keepalive_timeout 65;
+      types_hash_max_size 2048;
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log /var/log/nginx/access.log;
+      error_log /var/log/nginx/error.log;
+      gzip on;
+      server {
+        listen 80 default_server;
+        server_name _;
+        client_max_body_size 1024M;
+        location ^~ /api/v1/cluster/ {
+          proxy_pass http://aiedge-control-center-svc;
+        }
+        location ^~ /api/v1/auth/ {
+          proxy_pass http://aiedge-control-center-svc;
+        }
+        location = /api/v1/admin/user {
+          proxy_pass http://aiedge-control-center-svc;
+          limit_except POST DELETE {
+            # For requests that aren't a  POST, or DELETE,
+            # pass to :8050
+            proxy_pass http://aiedge-auth-service;
+          }
+        }
+        location ^~ /api/v1/user {
+          proxy_pass http://aiedge-auth-service;
+        }
+        location /api/v1/admin/user {
+          proxy_pass http://aiedge-auth-service;
+        }
+        location ^~ /api/v1/stream {
+          proxy_pass http://aiedge-stream-scheduler-service;
+        }
+        location /api/v1/ {
+          proxy_pass http://aiedge-control-center-svc;
+        }
+        location / {
+          index index.html;
+          root /www;
+          try_files $uri $uri/ /index.html =404;
+        }
+      }
+    }

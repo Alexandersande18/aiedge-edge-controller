@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stream-transfer-cm-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    aiedge/edge: "{{AIEDGE_SUBNET_NAME}}"
+data:
+  config.json: |
+    {
+      "auth": "http://{{AIEDGE_NODEPORT_IP}}:30100",
+      "userName": "aiedge-stream",
+      "password": "123456",
+      "edgeName": "{{AIEDGE_SUBNET_NAME}}",
+      "ceceServiceName" : "cece-service-{{AIEDGE_SUBNET_NAME}}",
+      "nsPort": "18053",
+      "cecePort": "80",
+      "mapperPort": "80",
+      "schedulerIP": "{{AIEDGE_NODEPORT_IP}}",
+      "schedulerPort": "30085",
+      "hubPath": "/hub"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stream-transfer-deployment-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    aiedge/edge: "{{AIEDGE_SUBNET_NAME}}"
+    app: stream-transfer-{{AIEDGE_SUBNET_NAME}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stream-transfer-{{AIEDGE_SUBNET_NAME}}
+  template:
+    metadata:
+      labels:
+        app: stream-transfer-{{AIEDGE_SUBNET_NAME}}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: aiedge/edge
+                    operator: In
+                    values:
+                      - "{{AIEDGE_SUBNET_NAME}}"
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - "amd64"
+      imagePullSecrets:
+        - name: registry-pull-secret
+      initContainers:
+        - name: wait-aiedge-auth
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox-curl"
+          command:
+            [
+              "sh",
+              "-c",
+              "until curl http://{{AIEDGE_NODEPORT_IP}}:30100 -m 2; do echo waiting for auth; sleep 2; done;",
+            ]
+      containers:
+        - name: stream-transfer-{{AIEDGE_SUBNET_NAME}}
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/stream-transfer:v2.0"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: stream-transfer-volume-{{AIEDGE_SUBNET_NAME}}
+              mountPath: /app/conf/config.json
+              subPath: config.json
+          env:
+            - name: hostIP # 传入hostip地址
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+      volumes:
+        - name: stream-transfer-volume-{{AIEDGE_SUBNET_NAME}}
+          configMap:
+            name: stream-transfer-cm-{{AIEDGE_SUBNET_NAME}}

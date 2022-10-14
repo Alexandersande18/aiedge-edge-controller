@@ -1,0 +1,127 @@
+apiVersion: devices.kubeedge.io/v1alpha2
+kind: DeviceModel
+metadata:
+  name: vibration-sensor-arm64
+  namespace: aiedge-public-device
+  labels:
+    aiedge/component: ""
+  annotations:
+    argumentDefinition: '["deviceInfo"]'
+    template: |
+      apiVersion: devices.kubeedge.io/v1alpha2
+      kind: Device
+      metadata:
+        name: {{ .fullName }}
+        namespace: {{ .namespace }}
+        labels:
+          aiedge/edge: {{ .subnetName }}
+        annotations:
+          arguments: {{ $argumentsFmt := print "'" .arguments "'" }}{{ $argumentsFmt }}
+      spec:
+        deviceModelRef:
+          name: vibration-sensor-arm64
+        nodeSelector:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: "kubernetes.io/hostname"
+              operator: In
+              values:
+              - {{ .nodeName }}
+            - key: "aiedge/edge"
+              operator: In
+              values:
+              - {{ .subnetName }}
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - arm64
+      status:
+        twins:
+        - propertyName: vibrate # 和上面的保持一致
+          desired:
+            metadata:
+              type: string
+            value: ""
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: {{ .fullName }}
+        namespace: {{ .namespace }}
+        labels:
+          app: {{ .fullName }}
+          aiedge/edge: {{ .subnetName }}
+      spec:
+        selector:
+          app: {{ .fullName }}
+        ports:
+        - protocol: TCP
+          port: 80
+          targetPort: 80
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: {{ .fullName }}
+        namespace: {{ .namespace }}
+        labels:
+          app: {{ .fullName }}
+          aiedge/edge: {{ .subnetName }}
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: {{ .fullName }}
+        template:
+          metadata:
+            labels:
+              app: {{ .fullName }}
+              aiedge/edge: {{ .subnetName }}
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: {{ .nodeName }}
+            volumes:
+            - name: jwt-pubkey-volume
+              configMap:
+                name: jwt-pubkey-configmap
+            - name: dev-for-gpio-volume
+              hostPath:
+                path: /dev
+            imagePullSecrets:
+            - name: registry-pull-secret
+            containers:
+            - name: {{ .fullName }}
+              image: {{ .imageRegistry }}/aiedge/vibration-mapper-arm64:latest
+              imagePullPolicy: Always
+              securityContext:
+                privileged: true
+              env:
+              - name: podIP
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.podIP
+              - name: hostIP
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              - name: deviceType
+                value: vibration-sensor-arm64
+              - name: deviceName
+                value: {{ .fullName }}
+              - name: deviceInfo
+                value: {{ $deviceInfoFmt := print "'" .deviceInfo "'" }}{{ $deviceInfoFmt }}
+              volumeMounts:
+              - name: jwt-pubkey-volume
+                mountPath: /root/code/vibration-mapper/src/conf/jwtRS256.key.pub
+                subPath: jwtRS256.key.pub
+              - name: dev-for-gpio-volume
+                mountPath: /dev
+spec:
+  properties:
+    - name: vibrate # 要上报的字段
+      description: vibrate
+      type:
+        string:
+          accessMode: ReadOnly
+          defaultValue: ""
+#deviceinfo gpio引脚约定为5

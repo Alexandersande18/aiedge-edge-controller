@@ -1,0 +1,187 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-cluster-ns-service
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: rocketmq-cluster-ns
+spec:
+  selector:
+    app: rocketmq-cluster-ns
+  ports:
+    - name: rocketmq-cluster-ns-port
+      protocol: TCP
+      port: 9876
+      nodePort: 30076
+      targetPort: 9876
+  type: NodePort
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocketmq-cluster-broker-a-configmap
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  broker-config: |
+    brokerClusterName=rocketmq-cluster
+    brokerName=rocketmq-broker-a
+    brokerId=0
+    #要与边缘侧通信，brokerIP必须和所处的节点的NodeIP相同，必须根据实际集群情况设定
+    brokerIP1={{AIEDGE_NODEPORT_IP}}
+    #与该broker服务的NodePort保持一致
+    listenPort=30911
+    #为namesrv服务的k8s内部可访问的地址
+    namesrvAddr=rocketmq-cluster-ns-service:9876
+    deleteWhen=04
+    fileReservedTime=48
+    brokerRole=ASYNC_MASTER
+    flushDiskType=ASYNC_FLUSH
+    #不开启此选项，则无法自动获取路由信息。
+    #若不开启此选项时需获取路由信息，请在每个broker上创建名为TBW102的主题，并保证不被权限控制禁止访问该主题。
+    autoCreateTopicEnable=true
+    autoCreateSubscriptionGroup=true
+    warmMapedFileEnable=true
+    #开启ACL权限控制
+    aclEnable=true
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-cluster-broker-service
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: rocketmq-cluster-broker
+spec:
+  selector:
+    app: rocketmq-cluster-broker
+  ports:
+    - name: rocketmq-cluster-ns-port-1
+      protocol: TCP
+      port: 30909 #集群内的其他容器组可通过 30909 端口访问 Service
+      nodePort: 30909 #通过任意节点的 30909 端口访问 Service
+      targetPort: 30909 #将请求转发到匹配 Pod 的 30909 端口
+    - name: rocketmq-cluster-ns-port-2
+      protocol: TCP
+      port: 30911 #集群内的其他容器组可通过 30911 端口访问 Service
+      nodePort: 30911 #通过任意节点的 30911 端口访问 Service
+      targetPort: 30911 #将请求转发到匹配 Pod 的 30911 端口
+  type: NodePort
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: rocketmq-cluster-ns-deployment
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  replicas: 1 #部署的pod个数，可根据实际情况配置，但配置时必须按照rocketmq的k8s配置样例，对ns服务器使用不同的配置文件
+  selector:
+    matchLabels:
+      app: rocketmq-cluster-ns
+      name: rocketmq-cluster-ns
+  template:
+    metadata:
+      labels:
+        app: rocketmq-cluster-ns
+        name: rocketmq-cluster-ns
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: rocketmq-nameserver
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/rocketmq:4.9.0-alpine"
+          command: ["sh", "mqnamesrv"]
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9876 #为rocketmq-cluster-ns-service的targetPort
+          env:
+            - name: JAVA_OPT
+              value: "-server -Xms192m -Xmx576m -Xmn72m -XX:CompressedClassSpaceSize=128m" #jvm内存相关参数
+          volumeMounts:
+            - mountPath: /home/rocketmq/logs
+              name: namesrvlogs
+      volumes:
+        - name: namesrvlogs #rocketmq的挂载卷，需要持久化时请改成可持久化的卷
+          emptyDir: {}
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: rocketmq-cluster-broker-deployment
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  replicas: 1 #部署的pod个数，可根据实际情况配置，但配置时必须按照rocketmq的k8s配置样例，对broker服务器使用不同的配置文件
+  selector:
+    matchLabels:
+      app: rocketmq-cluster-broker
+      name: rocketmq-cluster-broker
+  template:
+    metadata:
+      labels:
+        app: rocketmq-cluster-broker
+        name: rocketmq-cluster-broker
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: rocketmq-broker
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/rocketmq:4.9.0-alpine"
+          command:
+            ["sh", "mqbroker", "-c", "/home/rocketmq/broker-config/broker.conf"]
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 30909 #为rocketmq-cluster-broker-service的targetPort
+            - containerPort: 30911 #为rocketmq-cluster-broker-service的targetPort
+          env:
+            - name: JAVA_OPT
+              value: "-Drocketmq.acl.plain.file=acl-config/acl.yml -server -Xms256m -Xmx768m -Xmn96m -XX:MaxDirectMemorySize=256m -XX:CompressedClassSpaceSize=128m"
+          volumeMounts:
+            - mountPath: /home/rocketmq/logs
+              name: brokerlogs
+            - mountPath: /home/rocketmq/store
+              name: brokerstore
+            - mountPath: /home/rocketmq/broker-config
+              name: brokerconfig
+            - mountPath: /home/rocketmq/acl-config
+              name: aclconfig
+      volumes:
+        - name: brokerlogs #rocketmq的挂载卷，需要持久化时请改成可持久化的卷
+          emptyDir: {}
+        - name: brokerstore #rocketmq的挂载卷，需要持久化时请改成可持久化的卷
+          emptyDir: {}
+        - name: brokerconfig #rocketmq的broker配置文件，需根据实际rocketmq集群情况进行调整
+          configMap:
+            name: rocketmq-cluster-broker-a-configmap
+            items:
+              - key: broker-config
+                path: broker.conf
+        - name: aclconfig #rocketmq的acl权限配置文件
+          configMap:
+            name: rocketmq-acl-configmap
+            items:
+              - key: acl-config
+                path: acl.yml

@@ -1,0 +1,155 @@
+apiVersion: devices.kubeedge.io/v1alpha2
+kind: DeviceModel
+metadata:
+  name: rtmp-camera
+  namespace: aiedge-public-device
+  labels:
+    aiedge/component: ""
+  annotations:
+    argumentDefinition: '["deviceInfo"]'
+    template: |
+      apiVersion: devices.kubeedge.io/v1alpha2
+      kind: Device
+      metadata:
+        name: {{ .fullName }}
+        namespace: {{ .namespace }}
+        labels:
+          aiedge/edge: {{ .subnetName }}
+        annotations:
+          arguments: {{ $argumentsFmt := print "'" .arguments "'" }}{{ $argumentsFmt }}
+      spec:
+        deviceModelRef:
+          name: rtmp-camera
+        nodeSelector:
+          nodeSelectorTerms:
+          - matchExpressions:
+            # "kubernetes.io/hostname"必须要在第一个, (kubeedge的bug)
+            - key: "kubernetes.io/hostname"
+              operator: In
+              values:
+              - {{ .nodeName }}
+            - key: "aiedge/edge"
+              operator: In
+              values:
+              - {{ .subnetName }}
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+      status:
+        twins:
+        - propertyName: height
+          desired:
+            metadata:
+              type: string
+            value: ""
+        - propertyName: width
+          desired:
+            metadata:
+              type: string
+            value: ""
+        - propertyName: rate
+          desired:
+            metadata:
+              type: string
+            value: ""
+        - propertyName: status
+          desired:
+            metadata:
+              type: string
+            value: ""
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: {{ .fullName }}
+        namespace: {{ .namespace }}
+        labels:
+          app: {{ .fullName }}
+          aiedge/edge: {{ .subnetName }}
+      spec:
+        selector:
+          app: {{ .fullName }}
+        ports:
+        - protocol: TCP
+          port: 80
+          targetPort: 80
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: {{ .fullName }}
+        namespace: {{ .namespace }}
+        labels:
+          app: {{ .fullName }}
+          aiedge/edge: {{ .subnetName }}
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: {{ .fullName }}
+        template:
+          metadata:
+            labels:
+              app: {{ .fullName }}
+              aiedge/edge: {{ .subnetName }}
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: {{ .nodeName }}
+            volumes:
+            - name: jwt-pubkey-volume
+              configMap:
+                name: jwt-pubkey-configmap
+            imagePullSecrets:
+            - name: registry-pull-secret
+            containers:
+            - name: {{ .fullName }}
+              image: {{ .imageRegistry }}/aiedge/rtmp-mapper:v2.0
+              imagePullPolicy: Always
+              securityContext:
+                privileged: true
+              env:
+              - name: podIP
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.podIP
+              - name: hostIP
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              - name: deviceType
+                value: rtmp-camera
+              - name: deviceName
+                value: {{ .fullName }}
+              - name: deviceInfo
+                value: {{ $deviceInfoFmt := print "'" .deviceInfo "'" }}{{ $deviceInfoFmt }}
+              volumeMounts:
+              - name: jwt-pubkey-volume
+                mountPath: /root/code/rtmp-mapper/src/conf/jwtRS256.key.pub
+                subPath: jwtRS256.key.pub
+spec:
+  properties:
+    - name: height
+      description: "视频高度"
+      type:
+        string:
+          accessMode: ReadOnly
+          defaultValue: ""
+    - name: width
+      description: "视频宽度"
+      type:
+        string:
+          accessMode: ReadOnly
+          defaultValue: ""
+    - name: rate
+      description: "rate"
+      type:
+        string:
+          accessMode: ReadOnly
+          defaultValue: ""
+    - name: status
+      description: "状态"
+      type:
+        string:
+          accessMode: ReadOnly
+          defaultValue: ""

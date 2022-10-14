@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cece-service-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    aiedge/edge: "{{AIEDGE_SUBNET_NAME}}"
+    app: cece-{{AIEDGE_SUBNET_NAME}}
+spec:
+  selector:
+    app: cece-{{AIEDGE_SUBNET_NAME}}
+  ports:
+    - protocol: TCP
+      port: 80 #集群内的其他容器组可通过 18081 端口访问 Service
+      targetPort: 18081 #将请求转发到匹配 Pod 的 18081 端口
+  type: NodePort
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: cece-deploy-{{AIEDGE_SUBNET_NAME}}
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    aiedge/edge: "{{AIEDGE_SUBNET_NAME}}"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cece-{{AIEDGE_SUBNET_NAME}}
+  template:
+    metadata:
+      labels:
+        app: cece-{{AIEDGE_SUBNET_NAME}}
+    spec:
+      # nodeSelector:
+      #   aiedge/edge: {{AIEDGE_SUBNET_NAME}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: aiedge/edge
+                    operator: In
+                    values:
+                      - "{{AIEDGE_SUBNET_NAME}}"
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - "arm64"
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: cec-server
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/cec-server-arm64:latest"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 18081 #为cece-service的targetPort
+          env:
+            - name: AUTH_PUB_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: jwt-pubkey-configmap
+                  key: jwtRS256.key.pub
+            - name: CEC_SERVER_PORT
+              value: "18081" #为cece-service的targetPort
+            - name: ROCKETMQ_NAMESRV_ADDR
+              value: "{{AIEDGE_NODEPORT_IP}}:30076" #为namesrv服务的k8s外部可访问的地址
+          volumeMounts:
+            - mountPath: /opt/cec-server/config
+              name: serverconfig
+      volumes:
+        - name: serverconfig
+          configMap:
+            name: rocketmq-acl-configmap
+            items:
+              - key: acl-config
+                path: acl.yml

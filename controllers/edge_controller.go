@@ -95,7 +95,7 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// ADD & UPDATE
 	r.updateStatus(ctx, &edge)
 	edgeName := edge.GetName()
-	r.applyTest(ctx, &edge)
+	r.applyEdgeServices(ctx, &edge)
 	for _, nodeT := range edge.Spec.Nodes {
 		var kNode corev1.Node
 		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT}, &kNode); err != nil {
@@ -155,7 +155,7 @@ func (r *EdgeReconciler) deleteExternalResources(ctx context.Context, edge *aied
 	return nil
 }
 
-func (r *EdgeReconciler) applyTest(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
+func (r *EdgeReconciler) applyEdgeServices(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
 	log := log.FromContext(ctx)
 	clientObjList, err := deserializeAndRenderFromFile("yamls/test.yaml", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry))
 	if err != nil {

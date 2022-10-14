@@ -1,0 +1,239 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-edge-cm
+  namespace: aiedge
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+          lameduck 5s
+        }
+        ready
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+          endpoint http://127.0.0.1:10550
+          fallthrough in-addr.arpa ip6.arpa
+        }
+        prometheus :9153
+        forward . 223.5.5.5 {
+          max_concurrent 1000
+        }
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: coredns-edge
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  selector:
+    matchLabels:
+      app: coredns-edge
+  template:
+    metadata:
+      labels:
+        app: coredns-edge
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+                  - key: node-role.kubernetes.io/edge
+                    operator: Exists
+      hostNetwork: true
+      volumes:
+        - name: config-volume
+          configMap:
+            name: coredns-edge-cm
+            items:
+            - key: Corefile
+              path: Corefile
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: coredns-edge
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/coredns:aiedge-1.7.1"
+          imagePullPolicy: Always
+          resources:
+            limits:
+              memory: 170Mi
+            requests:
+              cpu: 100m
+              memory: 70Mi
+          args: [ "-conf", "/etc/coredns/Corefile" ]
+          volumeMounts:
+          - name: config-volume
+            mountPath: /etc/coredns
+            readOnly: true
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: coredns-edge-arm64
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  selector:
+    matchLabels:
+      app: coredns-edge-arm64
+  template:
+    metadata:
+      labels:
+        app: coredns-edge-arm64
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - arm64
+                  - key: node-role.kubernetes.io/edge
+                    operator: Exists
+      hostNetwork: true
+      volumes:
+        - name: config-volume
+          configMap:
+            name: coredns-edge-cm
+            items:
+            - key: Corefile
+              path: Corefile
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: coredns-edge
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/coredns-arm64:aiedge-1.7.1"
+          imagePullPolicy: Always
+          resources:
+            limits:
+              memory: 170Mi
+            requests:
+              cpu: 100m
+              memory: 70Mi
+          args: [ "-conf", "/etc/coredns/Corefile" ]
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: config-volume
+            mountPath: /etc/coredns
+            readOnly: true
+# ---
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: coredns-edge
+#   namespace: kube-system
+#   labels:
+#     k8s-app: kube-dns-edge
+#     kubernetes.io/name: "coredns-edge"
+# spec:
+#   # replicas: not specified here:
+#   # 1. Default is 1.
+#   # 2. Will be tuned in real time if DNS horizontal auto-scaling is turned on.
+#   # strategy:
+#   #   type: RollingUpdate
+#   #   rollingUpdate:
+#   #     maxUnavailable: 1
+#   selector:
+#     matchLabels:
+#       k8s-app: kube-dns-edge
+#   template:
+#     metadata:
+#       labels:
+#         k8s-app: kube-dns-edge
+#     spec:
+#       priorityClassName: system-cluster-critical
+#       serviceAccountName: coredns
+#       # tolerations:
+#       #   - key: "CriticalAddonsOnly"
+#       #     operator: "Exists"
+#       nodeSelector:
+#         kubernetes.io/os: linux
+#       affinity:
+#         nodeAffinity:
+#           requiredDuringSchedulingIgnoredDuringExecution:
+#             nodeSelectorTerms:
+#             - matchExpressions:
+#               - key: node-role.kubernetes.io/edge
+#                 operator: Exists
+#       containers:
+#       - name: coredns
+#         image: coredns/coredns:1.7.1
+#         imagePullPolicy: IfNotPresent
+#         resources:
+#           limits:
+#             memory: 170Mi
+#           requests:
+#             cpu: 100m
+#             memory: 70Mi
+#         args: [ "-conf", "/etc/coredns/Corefile" ]
+#         volumeMounts:
+#         - name: config-volume
+#           mountPath: /etc/coredns
+#           readOnly: true
+#         # ports:
+#         # - containerPort: 53
+#         #   name: dns
+#         #   protocol: UDP
+#         # - containerPort: 53
+#         #   name: dns-tcp
+#         #   protocol: TCP
+#         # - containerPort: 9153
+#         #   name: metrics
+#         #   protocol: TCP
+#         # securityContext:
+#         #   allowPrivilegeEscalation: false
+#         #   capabilities:
+#         #     add:
+#         #     - NET_BIND_SERVICE
+#         #     drop:
+#         #     - all
+#         #   readOnlyRootFilesystem: true
+#         # livenessProbe:
+#         #   httpGet:
+#         #     path: /health
+#         #     port: 8080
+#         #     scheme: HTTP
+#         #   initialDelaySeconds: 60
+#         #   timeoutSeconds: 5
+#         #   successThreshold: 1
+#         #   failureThreshold: 5
+#         # readinessProbe:
+#         #   httpGet:
+#         #     path: /ready
+#         #     port: 8181
+#         #     scheme: HTTP
+#       dnsPolicy: Default
+#       hostNetwork: true
+#       volumes:
+#         - name: config-volume
+#           configMap:
+#             name: coredns-edge
+#             items:
+#             - key: Corefile
+#               path: Corefile
+
+

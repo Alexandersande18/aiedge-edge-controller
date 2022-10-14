@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocketmq-acl-configmap
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  acl-config: |
+    accounts:
+    - accessKey: cecspecial #管理员ak
+      secretKey: 12345678 #管理员sk
+      admin: true

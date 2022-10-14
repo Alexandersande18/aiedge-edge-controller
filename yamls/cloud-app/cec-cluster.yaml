@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cec-cluster-server-service
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: cec-cluster-server
+spec:
+  selector:
+    app: cec-cluster-server
+  ports:
+    - name: cec-server-port
+      protocol: TCP
+      port: 18080 #集群内的其他容器组可通过 18080 端口访问 Service
+      nodePort: 30080 #通过任意节点的 30080 端口访问 Service
+      targetPort: 18080 #将请求转发到匹配 Pod 的 18080 端口
+  type: NodePort
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: cec-cluster-server-deployment
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  replicas: 1 #部署的pod个数，可根据实际情况配置
+  selector:
+    matchLabels:
+      app: cec-cluster-server
+      name: cec-cluster-server
+  template:
+    metadata:
+      labels:
+        app: cec-cluster-server
+        name: cec-cluster-server
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist #必须调度到不具备node-role.kubernetes.io/edge的节点，也就是不调度到边缘节点
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: cec-server
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/cec-server:latest"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 18080 #为cec-cluster-server-edge-service的targetPort
+          env:
+            - name: AUTH_PUB_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: jwt-pubkey-configmap
+                  key: jwtRS256.key.pub
+            - name: CEC_SERVER_PORT
+              value: "18080" #为cec-cluster-server-edge-service的targetPort
+            - name: ROCKETMQ_NAMESRV_ADDR
+              value: "rocketmq-cluster-ns-service:9876" #为namesrv服务的k8s内部可访问的地址
+          volumeMounts:
+            - mountPath: /opt/cec-server/config
+              name: serverconfig
+      volumes:
+        - name: serverconfig
+          configMap:
+            name: rocketmq-acl-configmap
+            items:
+              - key: acl-config
+                path: acl.yml

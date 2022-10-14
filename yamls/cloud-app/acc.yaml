@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: acc-admin
+  namespace: aiedge
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: acc-admin
+subjects:
+  - kind: ServiceAccount
+    name: acc-admin
+    namespace: aiedge
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiedge-control-center-cm
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  config.json: |
+    {
+      "server": {
+        "port": 8080,
+        "pubKeyPath": "conf/jwtRS256.key.pub"
+      },
+      "k8s": {
+        "configPath": "conf/k8sconfig"
+      },
+      "auth": {
+        "server": "http://aiedge-auth-service"
+      },
+      "registry": {
+        "server": "{{AIEDGE_IMAGE_REGISTRY}}"
+      },
+      "testAccount": {
+        "username": "",
+        "password": ""
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiedge-control-center-svc
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: aiedge-control-center
+spec:
+  selector:
+    app: aiedge-control-center
+  ports:
+    - protocol: TCP
+      port: 80
+      nodePort: 30082
+      targetPort: 8080
+  type: NodePort
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiedge-control-center-deploy
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: aiedge-control-center
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiedge-control-center
+  template:
+    metadata:
+      labels:
+        app: aiedge-control-center
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      volumes:
+        - name: aiedge-control-center-cm-volume
+          configMap:
+            name: aiedge-control-center-cm
+        - name: jwt-pubkey-volume
+          configMap:
+            name: jwt-pubkey-configmap
+      serviceAccountName: acc-admin
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: aiedge-control-center
+          # image: "192.168.7.20:5000/aiedge/aiedge-control-center:latest"
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-control-center:latest"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: aiedge-control-center-cm-volume
+              mountPath: /app/conf/config.json
+              subPath: config.json
+            - name: jwt-pubkey-volume
+              mountPath: /app/conf/jwtRS256.key.pub
+              subPath: jwtRS256.key.pub

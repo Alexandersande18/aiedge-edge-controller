@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiedge-auth-service
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: aiedge-auth
+spec:
+  selector:
+    app: aiedge-auth
+  ports:
+    - name: aiedge-auth-port
+      protocol: TCP
+      port: 80 #集群内的其他容器组可通过 port 端口访问 Service
+      nodePort: 30100 #通过任意节点的 nodePort 端口访问 Service
+      targetPort: 8080 #将请求转发到匹配 Pod 的 targetPort 端口
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiedge-auth-deployment
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: aiedge-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aiedge-auth
+  template:
+    metadata:
+      labels:
+        app: aiedge-auth
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      volumes:
+        - name: aiedge-auth-config-volume
+          configMap:
+            name: aiedge-auth-configmap
+        - name: jwt-pubkey-volume
+          configMap:
+            name: jwt-pubkey-configmap
+        - name: jwt-prvkey-volume
+          secret:
+            secretName: jwt-prvkey-secret
+      imagePullSecrets:
+        - name: registry-pull-secret
+      initContainers:
+        - name: wait-aiedge-auth-db
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox"
+          command:
+            [
+              "sh",
+              "-c",
+              "until nslookup aiedge-mysql; do echo waiting for aiedge-mysql; sleep 2; done;",
+            ]
+      containers:
+        - name: aiedge-auth
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-auth-go:latest"
+          env:
+            - name: AIEDGE_MYSQL_DBNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: aiedge-mysql-cm
+                  key: MYSQL_DATABASE
+            - name: AIEDGE_MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: aiedge-mysql-secret
+                  key: MYSQL_USER
+            - name: AIEDGE_MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aiedge-mysql-secret
+                  key: MYSQL_PASSWORD
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: aiedge-auth-config-volume
+              mountPath: /app/conf/config.json
+              subPath: config.json
+            - name: aiedge-auth-config-volume
+              mountPath: /app/conf/user.json
+              subPath: user.json
+            - name: jwt-pubkey-volume
+              mountPath: /app/conf/jwtRS256.key.pub
+              subPath: jwtRS256.key.pub
+            - name: jwt-prvkey-volume
+              mountPath: /app/conf/jwtRS256.key
+              subPath: jwtRS256.key
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiedge-auth-configmap
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  config.json: |
+    {
+      "db": {
+        "user": "aiedge",
+        "password": "aiedge",
+        "server": "aiedge-mysql:3306",
+        "dbname": "aiedge_auth",
+        "options": "?charset=utf8mb4&parseTime=True&loc=Local"
+      },
+      "server": {
+        "port": 8080,
+        "userListPageSize": 5,
+        "jwt": {
+          "privKeyPath": "conf/jwtRS256.key",
+          "pubKeyPath": "conf/jwtRS256.key.pub",
+          "issuer": "aiedge-auth",
+          "expireTime": 604800
+        }
+      }
+    }
+  user.json: |
+    [
+      {
+        "username": "aiedge-stream",
+        "password": "123456",
+        "isadmin": false,
+        "info": {
+          "email": "aiedge-stream@aiedge.net",
+          "phone": ""
+        },
+        "statements": [
+          {
+            "effect": "allow",
+            "action": [
+              "*"
+            ],
+            "resource": [
+              "cec-topic:mapper-stream-response-*",
+              "cec-topic:mapper-stream-request-*",
+              "cec-topic:mapper-stream-heartbeat-*"
+            ]
+          },
+          {
+            "effect": "allow",
+            "action": [
+              "*"
+            ],
+            "resource": [
+              "mapper:*"
+            ]
+          }
+        ]
+      },
+      {
+        "username": "monitor",
+        "password": "123456",
+        "isadmin": false,
+        "info": {
+          "email": "monitor@aiedge.net",
+          "phone": ""
+        },
+        "statements": [
+          {
+            "effect": "allow",
+            "action": [
+              "*"
+            ],
+            "resource": [
+              "*"
+            ]
+          }
+        ]
+      }
+    ]

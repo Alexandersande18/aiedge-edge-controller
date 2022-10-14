@@ -8,7 +8,7 @@ import (
 	// "k8s.io/apimachinery/pkg/runtime"
 	"io/ioutil"
 	// glog "log"
-
+	"path/filepath"
 	// "context"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
@@ -44,6 +44,85 @@ func deserializeAndRenderFromFile(fileName string, nodePortIp string, edgeName s
 			return ret, err
 		}
 		ret = append(ret, c)
+	}
+	return ret, nil
+}
+
+func getJWTConfig(yamlDir string) ([]client.Object, error) {
+	yamlList := []string{"private-key", "public-key-devns", "public-key"}
+	var ret []client.Object
+	for _, ym := range yamlList {
+		data, err := ioutil.ReadFile(filepath.Join(yamlDir, ym+".yaml"))
+		c, err := deserialize(data)
+		if err != nil {
+			return ret, err
+		}
+		ret = append(ret, c)
+	}
+	return ret, nil
+}
+
+func getAllPerEdgeServiceConfig(yamlDir string, nodePortIp string, edgeName string, imageRegistry string, baseArch string) ([]client.Object, error) {
+	yamlList := []string{"cece", "edge-stream-relay", "stream-transfer"}
+	arch := ""
+	if baseArch == "arm64" {
+		arch = "-arm64"
+	}
+	var ret []client.Object
+	for _, ym := range yamlList {
+		ls, err := deserializeAndRenderFromFile(filepath.Join(yamlDir, ym+arch+".yaml"), nodePortIp, edgeName, imageRegistry)
+		if err != nil {
+			return ret, err
+		}
+		for _, obj := range ls {
+			ret = append(ret, obj)
+		}
+	}
+	return ret, nil
+}
+
+
+func getAllBaseConfig(yamlDir string, brokerClusterIp string, imageRegistry string) ([]client.Object, error) {
+	yamlList := []string{"registry-pull-secret", "coredns", "mysql-pv", "rocketmq-acl-conf", "mysql-deploy", "rocketmq-cluster-x", "stream-srs"}
+	var ret []client.Object
+	for _, ym := range yamlList {
+		ls, err := deserializeAndRenderFromFile(filepath.Join(yamlDir, ym+".yaml"), "", "", imageRegistry)
+		if err != nil {
+			return ret, err
+		}
+		for _, obj := range ls {
+			ret = append(ret, obj)
+		}
+	}
+	return ret, nil
+}
+
+func getAllCloudServiceConfig(yamlDir string, schedulerNodePortIp string, imageRegistry string) ([]client.Object, error) {
+	yamlList := []string{"auth-deploy", "acc", "acc-front", "cec-cluster", "stream-scheduler"}
+	var ret []client.Object
+	for _, ym := range yamlList {
+		ls, err := deserializeAndRenderFromFile(filepath.Join(yamlDir, ym+".yaml"), schedulerNodePortIp, "", imageRegistry)
+		if err != nil {
+			return ret, err
+		}
+		for _, obj := range ls {
+			ret = append(ret, obj)
+		}
+	}
+	return ret, nil
+}
+
+func getAllDeviceModels(yamlDir string, schedulerNodePortIp string, imageRegistry string) ([]client.Object, error) {
+	yamlList := []string{"ht-sensor-arm64", "rtmp-camera-arm64", "rtmp-camera", "vibration-sensor-arm64"}
+	var ret []client.Object
+	for _, ym := range yamlList {
+		ls, err := deserializeAndRenderFromFile(filepath.Join(yamlDir, ym+".yaml"), "", "", "")
+		if err != nil {
+			return ret, err
+		}
+		for _, obj := range ls {
+			ret = append(ret, obj)
+		}
 	}
 	return ret, nil
 }

@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiedge-mysql-cm
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  MYSQL_DATABASE: aiedge_auth
+  my.cnf: |
+    [client]
+    default-character-set=utf8
+    [mysql]
+    default-character-set=utf8
+    [mysqld]
+    init_connect='SET collation_connection = utf8_unicode_ci'
+    init_connect='SET NAMES utf8'
+    character-set-server=utf8
+    collation-server=utf8_unicode_ci
+    skip-character-set-client-handshake
+    skip-name-resolve
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aiedge-mysql-secret
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  MYSQL_ROOT_PASSWORD: OGNJRTd1UDk5d0NQdHFhTA==
+  MYSQL_USER: YWllZGdl
+  MYSQL_PASSWORD: dGtqZjZzd1BRQlpGS2JBWg==
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiedge-mysql
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: aiedge-mysql
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiedge-mysql
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  selector:
+    matchLabels:
+      app: aiedge-mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: aiedge-mysql
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - image: "{{AIEDGE_IMAGE_REGISTRY}}/mysql:5.7"
+          name: aiedge-mysql
+          envFrom:
+            - secretRef:
+                name: aiedge-mysql-secret
+          env:
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: aiedge-mysql-cm
+                  key: MYSQL_DATABASE
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: aiedge-mysql-pv
+              mountPath: /var/lib/mysql
+            - name: aiedge-mysql-cm-volume
+              mountPath: /etc/mysql/my.cnf
+              subPath: my.cnf
+      volumes:
+        - name: aiedge-mysql-pv
+          persistentVolumeClaim:
+            claimName: aiedge-mysql-pvc
+        - name: aiedge-mysql-cm-volume
+          configMap:
+            name: aiedge-mysql-cm

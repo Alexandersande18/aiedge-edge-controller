@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiedge-ns-cm
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  config.json: |
+    {
+      "port": 18053,
+      "apiserver": "http://127.0.0.1:10550",
+      "pollDuring": 5000
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: aiedge-ns
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  selector:
+    matchLabels:
+      app: aiedge-ns
+  template:
+    metadata:
+      labels:
+        app: aiedge-ns
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+                  - key: node-role.kubernetes.io/edge
+                    operator: Exists
+      hostNetwork: true
+      volumes:
+        - name: aiedge-ns-cm-volume
+          configMap:
+            name: aiedge-ns-cm
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: aiedge-ns
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-ns2:latest"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: aiedge-ns-cm-volume
+              mountPath: /app/conf/config.json
+              subPath: config.json
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: aiedge-ns-arm64
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+spec:
+  selector:
+    matchLabels:
+      app: aiedge-ns-arm64
+  template:
+    metadata:
+      labels:
+        app: aiedge-ns-arm64
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - arm64
+                  - key: node-role.kubernetes.io/edge
+                    operator: Exists
+      hostNetwork: true
+      volumes:
+        - name: aiedge-ns-cm-volume
+          configMap:
+            name: aiedge-ns-cm
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: aiedge-ns
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-ns2-arm64:latest"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: aiedge-ns-cm-volume
+              mountPath: /app/conf/config.json
+              subPath: config.json

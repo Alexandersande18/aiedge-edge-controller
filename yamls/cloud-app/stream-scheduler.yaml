@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiedge-stream-scheduler
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+data:
+  config.json: |
+    {
+      "server": {
+        "port": 8080,
+        "pubKeyPath": "conf/jwtRS256.key.pub"
+      },
+      "auth": {
+        "server": "http://aiedge-auth-service",
+        "username": "aiedge-stream",
+        "password": "123456"
+      },
+      "srs": {
+        "rtmpServer": "rtmp://{{AIEDGE_NODEPORT_IP}}:30200/live",
+        "httpServer": "http://{{AIEDGE_NODEPORT_IP}}:30201/live"
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiedge-stream-scheduler-service
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: aiedge-stream-scheduler
+spec:
+  selector:
+    app: aiedge-stream-scheduler
+  ports:
+    - protocol: TCP
+      port: 80 #集群内的其他容器组可通过 port 端口访问 Service
+      nodePort: 30085 #通过任意节点的 nodePort 端口访问 Service
+      targetPort: 8080 #将请求转发到匹配 Pod 的 targetPort 端口
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiedge-stream-scheduler
+  namespace: aiedge
+  labels:
+    aiedge/component: ""
+    app: aiedge-stream-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiedge-stream-scheduler
+  template:
+    metadata:
+      labels:
+        app: aiedge-stream-scheduler
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/edge
+                    operator: DoesNotExist
+      volumes:
+        - name: aiedge-stream-scheduler-volume
+          configMap:
+            name: aiedge-stream-scheduler
+        - name: jwt-pubkey-volume
+          configMap:
+            name: jwt-pubkey-configmap
+      imagePullSecrets:
+        - name: registry-pull-secret
+      containers:
+        - name: aiedge-stream-scheduler
+          image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-stream-scheduler:v2.0"
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: aiedge-stream-scheduler-volume
+              mountPath: /app/conf/config.json
+              subPath: config.json
+            - name: jwt-pubkey-volume
+              mountPath: /app/conf/jwtRS256.key.pub
+              subPath: jwtRS256.key.pub
