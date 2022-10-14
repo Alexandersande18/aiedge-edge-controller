@@ -7,7 +7,7 @@ import (
 	// "sigs.k8s.io/controller-runtime/pkg/client"
 	// "k8s.io/apimachinery/pkg/runtime"
 	"io/ioutil"
-	// glog "log"
+	glog "log"
 	"path/filepath"
 	// "context"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -38,7 +38,7 @@ func deserializeAndRenderFromFile(fileName string, nodePortIp string, edgeName s
 		afterRender = strings.ReplaceAll(doc, "{{AIEDGE_SUBNET_NAME}}", edgeName)
 		afterRender = strings.ReplaceAll(afterRender, "{{AIEDGE_NODEPORT_IP}}", nodePortIp)
 		afterRender = strings.ReplaceAll(afterRender, "{{AIEDGE_IMAGE_REGISTRY}}", imageRegistry)
-		// glog.Println(afterRender)
+		glog.Println(afterRender)
 		c, err := deserialize([]byte(afterRender))
 		if err != nil {
 			return ret, err
@@ -48,16 +48,31 @@ func deserializeAndRenderFromFile(fileName string, nodePortIp string, edgeName s
 	return ret, nil
 }
 
-func getJWTConfig(yamlDir string) ([]client.Object, error) {
-	yamlList := []string{"private-key", "public-key-devns", "public-key"}
+func getSecrets(yamlDir string) ([]client.Object, error) {
+	yamlList := []string{"jwt-private-key", "jwt-public-key", "registry-pull-secret"}
+	nsList   := []string{"aiedge", "aiedge-public-device"}
 	var ret []client.Object
 	for _, ym := range yamlList {
-		data, err := ioutil.ReadFile(filepath.Join(yamlDir, ym+".yaml"))
-		c, err := deserialize(data)
-		if err != nil {
-			return ret, err
+		if ym == "jwt-private-key" {
+			data, err := ioutil.ReadFile(filepath.Join(yamlDir, ym+".yaml"))
+			c, err := deserialize(data)
+			if err != nil {
+				return ret, err
+			}
+			ret = append(ret, c)
+			glog.Println(ret)
+		} else {
+			for _, ns := range nsList {
+				data, err := ioutil.ReadFile(filepath.Join(yamlDir, ym+".yaml"))
+				afterRender := strings.ReplaceAll(string(data), "{{AIEDGE_NAMESPACE}}", ns)
+				c, err := deserialize([]byte(afterRender))
+				if err != nil {
+					return ret, err
+				}
+				ret = append(ret, c)
+			}
 		}
-		ret = append(ret, c)
+
 	}
 	return ret, nil
 }
@@ -81,12 +96,11 @@ func getAllPerEdgeServiceConfig(yamlDir string, nodePortIp string, edgeName stri
 	return ret, nil
 }
 
-
 func getAllBaseConfig(yamlDir string, brokerClusterIp string, imageRegistry string) ([]client.Object, error) {
-	yamlList := []string{"registry-pull-secret", "coredns", "mysql-pv", "rocketmq-acl-conf", "mysql-deploy", "rocketmq-cluster-x", "stream-srs"}
+	yamlList := []string{"coredns", "mysql-pv", "rocketmq-acl-conf", "mysql-deploy", "rocketmq-cluster-x", "stream-srs"}
 	var ret []client.Object
 	for _, ym := range yamlList {
-		ls, err := deserializeAndRenderFromFile(filepath.Join(yamlDir, ym+".yaml"), "", "", imageRegistry)
+		ls, err := deserializeAndRenderFromFile(filepath.Join(yamlDir, ym + ".yaml"), "", "", imageRegistry)
 		if err != nil {
 			return ret, err
 		}
