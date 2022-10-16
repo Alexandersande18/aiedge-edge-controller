@@ -27,22 +27,23 @@ import (
 type EdgeSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	EdgeName string   `json:"edgeName,omitempty"`
-	BaseArch BaseArch   `json:"baseArch,omitempty"`
-	NodePortIP nodePortIP `json:"nodePortIp,omitempty"`
-	ImageRegistry imageRegistry `json:"imageRegistry,omitempty"`
-	Nodes    []string `json:"nodes,omitempty"`
+	EdgeName           string        `json:"edgeName,omitempty"`
+	BaseArch           BaseArch      `json:"baseArch,omitempty"`
+	NodePortIP         nodePortIP    `json:"nodePortIp,omitempty"`
+	ImageRegistry      imageRegistry `json:"imageRegistry,omitempty"`
+	BrokerClusterIp    string        `json:"brokerClusterIp,omitempty"`
+	SchedulerClusterIp string        `json:"schedulerClusterIp,omitempty"`
+	Nodes              []string      `json:"nodes,omitempty"`
 }
 
 type imageRegistry string
 
-type nodePortIP string 
+type nodePortIP string
 
 // +kubebuilder:validation:Enum=amd64;arm64
 type BaseArch string
 
-type NodeName string 
-
+type NodeName string
 
 // EdgeStatus defines the observed state of Edge
 type EdgeStatus struct {
@@ -52,10 +53,11 @@ type EdgeStatus struct {
 	EdgeSize       int32 `json:"edgeSize"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:printcolumn:name="basearch",type=string,JSONPath=`.spec.baseArch`
-//+kubebuilder:printcolumn:name="size",type="integer",JSONPath=`.status.edgeSize`
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="basearch",type=string,JSONPath=`.spec.baseArch`
+// +kubebuilder:printcolumn:name="size",type="integer",JSONPath=`.status.edgeSize`
 type Edge struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -13,7 +13,7 @@ spec:
     listKind: EdgeList
     plural: edges
     singular: edge
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.baseArch
@@ -46,6 +46,8 @@ spec:
                 - amd64
                 - arm64
                 type: string
+              brokerClusterIp:
+                type: string
               edgeName:
                 description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
                   Important: Run "make" to regenerate code after modifying this file'
@@ -58,6 +60,8 @@ spec:
                 items:
                   type: string
                 type: array
+              schedulerClusterIp:
+                type: string
             type: object
           status:
             description: EdgeStatus defines the observed state of Edge

@@ -20,9 +20,10 @@ import (
 	aiedgendsllabcnv1 "aiedge-edge-controller/api/v1"
 	"context"
 	glog "log"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
+	// "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	ktypes "k8s.io/apimachinery/pkg/types"
 
@@ -35,6 +36,7 @@ import (
 
 const (
 	AiedgeEdgeTagName = "aiedge/edge"
+	AiedgeBaseConfig  = "aiedge-base-services"
 	KEEdgeTagName     = "node-role.kubernetes.io/edge"
 )
 
@@ -47,6 +49,7 @@ type EdgeReconciler struct {
 //+kubebuilder:rbac:groups=aiedge.ndsl-lab.cn,resources=edges,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=aiedge.ndsl-lab.cn,resources=edges/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=aiedge.ndsl-lab.cn,resources=edges/finalizers,verbs=update
+//+kubebuilder:rbac:groups=*,resources=*,verbs=*
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -54,7 +57,6 @@ type EdgeReconciler struct {
 // the Edge object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
-//
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -81,7 +83,7 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// The object is being deleted
 		glog.Println("Being deleted")
 		if controllerutil.ContainsFinalizer(&edge, myFinalizerName) {
-			if err := r.deleteExternalResources(ctx, &edge); err != nil {
+			if err := r.handleEdgeDelete(ctx, &edge); err != nil {
 				return ctrl.Result{}, err
 			}
 			controllerutil.RemoveFinalizer(&edge, myFinalizerName)
@@ -93,9 +95,13 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// ADD & UPDATE
+	if edge.Name == AiedgeBaseConfig {
+		glog.Println("Got", edge.Name)
+		err := r.applyBaseServices(ctx, &edge)
+		return ctrl.Result{}, err
+	}
 	r.updateStatus(ctx, &edge)
 	edgeName := edge.GetName()
-	r.applyEdgeServices(ctx, &edge)
 	for _, nodeT := range edge.Spec.Nodes {
 		var kNode corev1.Node
 		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT}, &kNode); err != nil {
@@ -115,13 +121,15 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			log.Error(err, "Failed to TAG Node"+nodeT)
 		}
 	}
-
-	var nodeList corev1.NodeList
+	// var nodeList corev1.NodeList
 	// labelSelector := metav1.LabelSelector{MatchLabels: map[string]string{"version":""}}
-	labelSelector, _ := labels.Parse("node-role.kubernetes.io/edge")
-	if err := r.List(ctx, &nodeList, &client.ListOptions{LabelSelector: labelSelector}); err != nil {
-		log.Error(err, "Failed to LIST nodes")
-		return ctrl.Result{}, err
+	// labelSelector, _ := labels.Parse("node-role.kubernetes.io/edge")
+	// if err := r.List(ctx, &nodeList, &client.ListOptions{LabelSelector: labelSelector}); err != nil {
+	// 	log.Error(err, "Failed to LIST nodes")
+	// 	return ctrl.Result{}, err
+	// }
+	if len(edge.Spec.Nodes) != 0 {
+		r.applyEdgeServices(ctx, &edge)
 	}
 
 	return ctrl.Result{}, nil
@@ -137,36 +145,98 @@ func (r *EdgeReconciler) updateStatus(ctx context.Context, edge *aiedgendsllabcn
 	return nil
 }
 
-func (r *EdgeReconciler) deleteExternalResources(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
-	//
-	// delete any external resources associated with the cronJob
-	//
-	// Ensure that delete implementation is idempotent and safe to invoke
-	// multiple times for same object.
-	clientObjList, err := deserializeAndRenderFromFile("yamls/test.yaml", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry))
+func (r *EdgeReconciler) applyBaseServices(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
+	secrets, err := getSecrets("yamls/secrets")
 	if err != nil {
-		glog.Println(err, "deserializeFromFile Error")
 		return err
 	}
-	for _, clientObj := range clientObjList {
-		glog.Println("Deleting", clientObj.GetName())
-		r.Delete(ctx, clientObj)
+	for _, secret := range secrets {
+		r.createOrPatch(ctx, secret)
+	}
+
+	baseConfigs, err := getAllBaseConfig("yamls/base", edge.Spec.BrokerClusterIp, string(edge.Spec.ImageRegistry))
+	if err != nil {
+		return err
+	}
+	for _, baseConfig := range baseConfigs {
+		r.createOrPatch(ctx, baseConfig)
+	}
+
+	cloudApps, err := getAllCloudServiceConfig("yamls/cloud-app", edge.Spec.SchedulerClusterIp, string(edge.Spec.ImageRegistry))
+	if err != nil {
+		return err
+	}
+	for _, cloudApp := range cloudApps {
+		r.createOrPatch(ctx, cloudApp)
 	}
 	return nil
 }
 
-func (r *EdgeReconciler) applyEdgeServices(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
-	log := log.FromContext(ctx)
-	clientObjList, err := deserializeAndRenderFromFile("yamls/test.yaml", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry))
+func (r *EdgeReconciler) handleEdgeDelete(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
+	if edge.GetName() == AiedgeBaseConfig {
+		return nil
+	}
+	edgeServices, err := getAllPerEdgeServiceConfig("yamls/edge-app", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry), string(edge.Spec.BaseArch))
 	if err != nil {
-		log.Error(err, "deserializeFromFile Error")
 		return err
 	}
-	for _, clientObj := range clientObjList {
-		glog.Println("Applying", clientObj.GetName())
-		r.Create(ctx, clientObj)
+	for _, edgeService := range edgeServices {
+		glog.Println("Deleting", edgeService.GetName())
+		r.Delete(ctx, edgeService)
+	}
+	for _, nodeT := range edge.Spec.Nodes {
+		var kNode corev1.Node
+		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT}, &kNode); err != nil {
+			// log.Error(err, "Failed to GET Node"+nodeT)
+			return err
+		}
+		kNode.Labels[AiedgeEdgeTagName] = ""
+
+		delete(kNode.ObjectMeta.Labels, AiedgeEdgeTagName)
+		delete(kNode.Labels, AiedgeEdgeTagName)
+		glog.Println("UNTAG", kNode)
+		if err := r.Update(ctx, &kNode); err != nil {
+			glog.Println(err, "Failed to UNTAG Node"+nodeT)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *EdgeReconciler) applyEdgeServices(ctx context.Context, edge *aiedgendsllabcnv1.Edge) error {
+	edgeServices, err := getAllPerEdgeServiceConfig("yamls/edge-app", string(edge.Spec.NodePortIP), edge.Spec.EdgeName, string(edge.Spec.ImageRegistry), string(edge.Spec.BaseArch))
+	if err != nil {
+		return err
+	}
+	for _, edgeService := range edgeServices {
+		r.createOrPatch(ctx, edgeService)
 	}
 	return nil
+}
+
+func (r *EdgeReconciler) createOrPatch(ctx context.Context, obj client.Object) error {
+	log := log.FromContext(ctx)
+	glog.Println("Applying", obj.GetName())
+	if err := r.Create(ctx, obj); err != nil && r.isAlreadyExistError(err) {
+		glog.Println(obj.GetName(), "Already Exist, Patching")
+		if err := r.Patch(ctx, obj, client.Merge); err != nil {
+			log.Error(err, "Failed to PATCH "+obj.GetName())
+		}
+	}
+	return nil
+}
+
+func (r *EdgeReconciler) createConfig(ctx context.Context, obj client.Object) error {
+	glog.Println("Applying", obj.GetName())
+	if err := r.Create(ctx, obj); err != nil && r.isAlreadyExistError(err) {
+		glog.Println(obj.GetName(), "Already Exist")
+	}
+	return nil
+}
+
+func (r *EdgeReconciler) isAlreadyExistError(err error) bool {
+	return strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "port is already allocated")
 }
 
 // SetupWithManager sets up the controller with the Manager.
