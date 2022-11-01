@@ -21,7 +21,8 @@ spec:
   nodePortIp: "192.168.20.221"
   imageRegistry: "registry.aiedge.ndsl-lab.cn"
   nodes:
-    - zqd-edge222
+    - hostName: zqd-edge222
+      gpuArch: None
 ---
 apiVersion: aiedge.ndsl-lab.cn/v1
 kind: Edge
@@ -33,4 +34,5 @@ spec:
   nodePortIp: "192.168.20.221"
   imageRegistry: "registry.aiedge.ndsl-lab.cn"
   nodes:
-    - zqd-edge223
+    - hostName: zqd-edge223
+      gpuArch: None

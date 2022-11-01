@@ -33,7 +33,12 @@ type EdgeSpec struct {
 	ImageRegistry      imageRegistry `json:"imageRegistry,omitempty"`
 	BrokerClusterIp    string        `json:"brokerClusterIp,omitempty"`
 	SchedulerClusterIp string        `json:"schedulerClusterIp,omitempty"`
-	Nodes              []string      `json:"nodes,omitempty"`
+	Nodes              []Node        `json:"nodes,omitempty"`
+}
+
+type Node struct {
+	HostName string `json:"hostName,omitempty"`
+	GpuArch  string `json:"gpuArch,omitempty"`
 }
 
 type imageRegistry string

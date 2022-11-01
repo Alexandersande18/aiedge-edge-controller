@@ -58,7 +58,12 @@ spec:
                 type: string
               nodes:
                 items:
-                  type: string
+                  properties:
+                    gpuArch:
+                      type: string
+                    hostName:
+                      type: string
+                  type: object
                 type: array
               schedulerClusterIp:
                 type: string

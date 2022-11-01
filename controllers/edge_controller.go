@@ -38,6 +38,7 @@ const (
 	AiedgeEdgeTagName = "aiedge/edge"
 	AiedgeBaseConfig  = "aiedge-base-services"
 	KEEdgeTagName     = "node-role.kubernetes.io/edge"
+	AiedgeGpuArchTag  = "aiedge/gpuarch"
 )
 
 // EdgeReconciler reconciles a Edge object
@@ -104,21 +105,23 @@ func (r *EdgeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	edgeName := edge.GetName()
 	for _, nodeT := range edge.Spec.Nodes {
 		var kNode corev1.Node
-		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT}, &kNode); err != nil {
-			log.Error(err, "Failed to GET Node"+nodeT)
+		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT.HostName}, &kNode); err != nil {
+			log.Error(err, "Failed to GET Node"+nodeT.HostName)
 			return ctrl.Result{}, client.IgnoreAlreadyExists(err)
 		}
 		glog.Println(edgeName + "/" + kNode.Name)
 		lb := kNode.GetLabels()
-		if _, ok := lb[KEEdgeTagName]; !ok {
-			continue
+		// nodeT is an Edge Node
+		if _, ok := lb[KEEdgeTagName]; ok {
+			// if label, ok := lb[AiedgeEdgeTagName]; ok && label == edgeName {
+			// 	continue
+			// }
+			kNode.Labels[AiedgeEdgeTagName] = edgeName
 		}
-		if label, ok := lb[AiedgeEdgeTagName]; ok && label == edgeName {
-			continue
-		}
-		kNode.Labels[AiedgeEdgeTagName] = edgeName
-		if err := r.Patch(ctx, &kNode, client.Merge); err != nil {
-			log.Error(err, "Failed to TAG Node"+nodeT)
+
+		kNode.Labels[AiedgeGpuArchTag] = nodeT.GpuArch
+		if err := r.Update(ctx, &kNode); err != nil {
+			log.Error(err, "Failed to TAG Node"+nodeT.HostName)
 		}
 	}
 	// var nodeList corev1.NodeList
@@ -186,7 +189,7 @@ func (r *EdgeReconciler) handleEdgeDelete(ctx context.Context, edge *aiedgendsll
 	}
 	for _, nodeT := range edge.Spec.Nodes {
 		var kNode corev1.Node
-		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT}, &kNode); err != nil {
+		if err := r.Get(ctx, ktypes.NamespacedName{Namespace: "", Name: nodeT.HostName}, &kNode); err != nil {
 			// log.Error(err, "Failed to GET Node"+nodeT)
 			return err
 		}
@@ -196,7 +199,7 @@ func (r *EdgeReconciler) handleEdgeDelete(ctx context.Context, edge *aiedgendsll
 		delete(kNode.Labels, AiedgeEdgeTagName)
 		glog.Println("UNTAG", kNode)
 		if err := r.Update(ctx, &kNode); err != nil {
-			glog.Println(err, "Failed to UNTAG Node"+nodeT)
+			glog.Println(err, "Failed to UNTAG Node"+nodeT.HostName)
 			return err
 		}
 	}

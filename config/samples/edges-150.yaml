@@ -8,8 +8,6 @@ spec:
   imageRegistry: "registry.aiedge.ndsl-lab.cn"
   brokerClusterIp: "192.168.20.151"
   schedulerClusterIp: "192.168.20.151"
-  # "rtmpServer": "rtmp://aiedge.ndsl-lab.cn:8035/live",
-  # "httpServer": "http://aiedge.ndsl-lab.cn:8086/live"
 ---
 apiVersion: aiedge.ndsl-lab.cn/v1
 kind: Edge
@@ -21,10 +19,18 @@ spec:
   nodePortIp: "192.168.20.151"
   imageRegistry: "registry.aiedge.ndsl-lab.cn"
   nodes:
-    - edge1-c153
-    - edge1-c154
-    - edge1-nx168
-    - edge1-nx248
+    - hostName: edge1-c153
+      gpuArch: None 
+    - hostName: edge1-c154
+      gpuArch: None
+    - hostName: edge1-nx248
+      gpuArch: NX
+    - hostName: edge1-nx168
+      gpuArch: NX
+    - hostName: edge1-nx90
+      gpuArch: NX
+    - hostName: edge1-nx40
+      gpuArch: NX
 ---
 apiVersion: aiedge.ndsl-lab.cn/v1
 kind: Edge
@@ -36,4 +42,5 @@ spec:
   nodePortIp: "192.168.20.151"
   imageRegistry: "registry.aiedge.ndsl-lab.cn"
   nodes:
-    - edge2-c156
+    - hostName: edge2-c156
+      gpuArch: Geforce
