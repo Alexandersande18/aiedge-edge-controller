@@ -54,6 +54,8 @@ spec:
         - name: registry-pull-secret
       containers:
         - name: cec-server
+          securityContext:
+            privileged: true
           image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/cec-server-arm64:latest"
           imagePullPolicy: Always
           ports:

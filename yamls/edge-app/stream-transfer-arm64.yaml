@@ -56,18 +56,22 @@ spec:
                       - "arm64"
       imagePullSecrets:
         - name: registry-pull-secret
-      initContainers:
-        - name: wait-aiedge-auth
-          image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox-curl"
-          command:
-            [
-              "sh",
-              "-c",
-              "until curl http://{{AIEDGE_NODEPORT_IP}}:30100 -m 2; do echo waiting for auth; sleep 2; done;",
-            ]
+      # initContainers:
+      #   - name: wait-aiedge-auth
+      #     image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox-curl"
+      #     securityContext:
+      #       privileged: true
+      #     command:
+      #       [
+      #         "sh",
+      #         "-c",
+      #         "until curl http://{{AIEDGE_NODEPORT_IP}}:30100 -m 2; do echo waiting for auth; sleep 2; done;",
+      #       ]
       containers:
         - name: stream-transfer-{{AIEDGE_SUBNET_NAME}}
           image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/stream-transfer-arm64:v2.0"
+          securityContext:
+            privileged: true
           imagePullPolicy: Always
           volumeMounts:
             - name: stream-transfer-volume-{{AIEDGE_SUBNET_NAME}}

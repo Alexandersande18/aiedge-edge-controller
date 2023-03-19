@@ -110,15 +110,17 @@ spec:
                       - "arm64"
       imagePullSecrets:
         - name: registry-pull-secret
-      initContainers:
-        - name: wait-aiedge-auth
-          image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox-curl"
-          command:
-            [
-              "sh",
-              "-c",
-              "until curl http://{{AIEDGE_NODEPORT_IP}}:30100 -m 2; do echo waiting for auth; sleep 2; done;",
-            ]
+      # initContainers:
+      #   - name: wait-aiedge-auth
+      #     image: "{{AIEDGE_IMAGE_REGISTRY}}/busybox-curl"
+      #     securityContext:
+      #       privileged: true
+      #     command:
+      #       [
+      #         "sh",
+      #         "-c",
+      #         "until curl http://{{AIEDGE_NODEPORT_IP}}:30100 -m 2; do echo waiting for auth; sleep 2; done;",
+      #       ]
       containers:
         - name: stream-transfer-{{AIEDGE_SUBNET_NAME}}
           image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/stream-transfer-arm64:v2.0"
@@ -127,6 +129,8 @@ spec:
             - name: stream-transfer-volume-{{AIEDGE_SUBNET_NAME}}
               mountPath: /app/conf/config.json
               subPath: config.json
+          securityContext:
+            privileged: true
           env:
             - name: hostIP # 传入hostip地址
               valueFrom:
@@ -135,6 +139,8 @@ spec:
         - name: aiedge-stream-scheduler
           image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/aiedge-stream-scheduler-arm64:v2.0"
           imagePullPolicy: Always
+          securityContext:
+            privileged: true
           volumeMounts:
             - name: aiedge-stream-scheduler-volume
               mountPath: /app/conf/config.json
@@ -143,6 +149,8 @@ spec:
               mountPath: /app/conf/jwtRS256.key.pub
               subPath: jwtRS256.key.pub
         - name: stream-srs
+          securityContext:
+            privileged: true
           image: "{{AIEDGE_IMAGE_REGISTRY}}/aiedge/srs-arm64:4"
           imagePullPolicy: IfNotPresent
           ports:
